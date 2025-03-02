@@ -1,5 +1,7 @@
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs");
+const { cloudinaryUpload } = require("../config/cloudinary");
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -30,4 +32,23 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: fileFilter,
 });
-module.exports = upload;
+const uploadToCloudinary = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ message: "No file uploaded" });
+    }
+    const filePath = req.file.path;
+    const result = await cloudinaryUpload(filePath);
+    fs.unlinkSync(filePath);
+    req.cloudinaryFile = {
+      url: result.secure_url,
+      public_id: result.public_id,
+    };
+    next();
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "File upload failed", error: error.message });
+  }
+};
+module.exports = { upload, uploadToCloudinary };

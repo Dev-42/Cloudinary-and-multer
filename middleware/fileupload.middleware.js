@@ -2,6 +2,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { cloudinaryUpload } = require("../config/cloudinary");
+const supabase = require("../config/supabase");
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -46,6 +47,13 @@ const uploadToCloudinary = async (req, res, next) => {
         url: result.secure_url,
         public_id: result.public_id,
       });
+      await supabase.from("uploads").insert([
+        {
+          file_name: file.originalname,
+          file_url: result.secure_url,
+          cloudinary_id: result.public_id,
+        },
+      ]);
     }
     req.cloudinaryFiles = uploadedFiles;
     next();

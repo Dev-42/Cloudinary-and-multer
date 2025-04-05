@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const { cloudinaryUpload } = require("../config/cloudinary");
 const supabase = require("../config/supabase");
+const sharp = require("sharp");
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -41,19 +42,50 @@ const uploadToCloudinary = async (req, res, next) => {
     }
     const uploadedFiles = [];
     for (let file of req.files) {
-      const result = await cloudinaryUpload(file.path);
-      fs.unlinkSync(file.path);
-      uploadedFiles.push({
-        url: result.secure_url,
-        public_id: result.public_id,
-      });
-      await supabase.from("uploads").insert([
-        {
-          file_name: file.originalname,
-          file_url: result.secure_url,
-          cloudinary_id: result.public_id,
-        },
-      ]);
+      // Define format based on mimetype
+      const isPng = file.mimetype === "image/png";
+      const outputFormat = isPng ? "webp" : "jpeg";
+
+      const resizedCompressedPath = `upload/processed-${Date.now()}-${path.basename(
+        file.originalname,
+        path.extname(file.originalname)
+      )}.${outputFormat}`;
+
+      try {
+        // Resize, compress, and convert format
+        await sharp(file.path)
+          .resize({ width: 500 }) // Maintain aspect ratio
+          .toFormat(outputFormat, {
+            quality: 70, // Adjust quality (50–80 recommended)
+          })
+          .toFile(resizedCompressedPath);
+
+        // Upload to Cloudinary
+        const result = await cloudinaryUpload(resizedCompressedPath);
+
+        // Cleanup local files
+        fs.unlinkSync(file.path);
+        fs.unlinkSync(resizedCompressedPath);
+
+        uploadedFiles.push({
+          url: result.secure_url,
+          public_id: result.public_id,
+        });
+
+        await supabase.from("uploads").insert([
+          {
+            file_name: file.originalname,
+            file_url: result.secure_url,
+            cloudinary_id: result.public_id,
+          },
+        ]);
+      } catch (err) {
+        console.error("Error processing image:", err);
+        return res.status(500).json({
+          message: "Image processing failed",
+          error: err.message,
+        });
+      }
     }
     req.cloudinaryFiles = uploadedFiles;
     next();
